@@ -24,9 +24,9 @@ type
       Self.col := col;
     end;
     
-    procedure SetIsPressed(isPress: boolean);// сеттер для признака, что кнопка нажата
+    procedure SetIsPressed(isPressed: boolean);// сеттер для признака, что кнопка нажата
     begin
-      Self.isPress := isPress;
+      isPress := isPressed;
     end;
     
     procedure SetIsRightAnswer(isRightAns: boolean);// сеттер для признака, что эта кнопка с правильным ответом
@@ -36,11 +36,11 @@ type
   
   public 
     // конструктор
-    constructor(val: integer; col: Color; isPress: boolean);
+    constructor(val: integer; col: Color; isPressed: boolean);
     begin
       Self.val := val;
       Self.col := col;
-      Self.isPress := isPress;
+      Self.isPressed := isPressed;
     end;
     
     property Value: integer read val;// Свойство Value устанавливается только в контрукторе
@@ -51,7 +51,9 @@ type
 
 var
   M, N: integer; // размеры игрового поля в кнопках по горизонтали и вертикали
-  arrField: array [0..maxDimX, 0..maxDimY] of cButton;// массив с кнопками игрового поля
+  arrField: array [0..maxDimX, 0..maxDimY] of cButton; // массив с кнопками игрового поля
+  RightAnswer: integer; // текущий правильный ответ
+  isCanUseMouse: boolean;// флаг, что сейчас можно обрабатывать нажатие мыши
 
 // отображение игрового поля - кнопки от 3*3 до n*m
 //   задается на входе размерность и диапозон значений на заполнение
@@ -81,6 +83,7 @@ var
   X, Y: integer;
   MyRoundRectABC: RoundRectABC;
 begin
+  // рисуем поле с кнопками
   for var i := 0 to DimX - 1 do
     for var j := 0 to DimY - 1 do
     begin
@@ -90,6 +93,15 @@ begin
       MyRoundRectABC.dx := i; // сохраняем позицию создаваемой кнопки в массиве классов кнопок
       MyRoundRectABC.dy := j;
     end;
+  
+  // пишем условие
+  SetFontSize(17);
+  DrawTextCentered(10, 10, WinWidth - 10, 50, 'Выберете цепочку, чтобы в сумме получилось:');
+  SetFontSize(30);
+  DrawTextCentered(10, 60, WinWidth - 10, 110, RightAnswer.ToString);
+  
+  // запускам обработку мыши
+  isCanUseMouse := true;
 end;
 
 {процедура для подготовки игрового поля}
@@ -99,12 +111,13 @@ var
   raRnd: integer; // для поимка случайной кнопки в ряду. Она будет с правильным ответом
   RndPrv: integer;// номер кнопки с правильным ответом в предыдущем ряду
 begin
-  // чистим массив
+  // чистим массив и переменные
   for var i := 0 to maxDimX do
     for var j := 0 to maxDimY do
     begin
       arrField[i, j] := nil;
     end;
+  RightAnswer := 0;
   
   for var i := 0 to DimX - 1 do
     for var j := 0 to DimY - 1 do
@@ -118,7 +131,7 @@ begin
   for var j := 0 to DimY - 1 do
   begin
     case j of
-      0: raRnd := random(DimX);// определяем для первого ряда
+      0: raRnd := 1 + random(DimX - 1);// определяем для первого ряда
     else begin
         // для остальных рядов
         if RndPrv = 0 then raRnd := random(2)
@@ -129,20 +142,116 @@ begin
     
     RndPrv := raRnd;
     arrField[raRnd, j].isRightAns := True;
-    if EnableCheat then arrField[raRnd, j].bColor := clAzure;
+    if EnableCheat then arrField[raRnd, j].SetColor(clAzure);
+    RightAnswer += arrField[raRnd, j].Value;
   end;
+end;
+
+{ возвращаем сколько кнопок выбрано в ряду}
+function PressedInRow(row: integer): shortint;
+var
+  nTmp: shortint;
+begin
+  nTmp := 0;
+  for var i := 0 to N - 1 do
+    if arrField[i, row].isPressed then nTmp += 1;
+  result := nTmp;
+end;
+
+{ возвращаем значение нажатой кнопки в ряду}
+function PressedInRowValue(row: integer): integer;
+begin
+  for var i := 0 to N - 1 do
+    if arrField[i, row].isPressed then begin
+      result := arrField[i, row].Value;
+      exit;
+    end;
+end;
+
+{ моргаем нажатыми кнопками заданным цветом}
+procedure BlinkPressed(cColor: Color);
+  procedure SetColor(cColor: Color);
+  begin
+    for var i := 0 to Objects.Count - 1 do
+      if Objects[i] is RoundRectABC then 
+        if arrField[Objects[i].dx, Objects[i].dy].IsPressed then
+        begin
+          arrField[Objects[i].dx, Objects[i].dy].SetColor(cColor);
+          Objects[i].Color := cColor;
+        end;
+  end;
+
+begin
+  for var i := 1 to 3 do 
+  begin
+    SetColor(cColor);
+    sleep(100);
+    SetColor(clFloralWhite);
+    sleep(100);
+  end;
+end;
+
+{ проверка выбранных ответов:
+  - если выбрано в каждом ряду - проверяем полученную сумму цепочки}
+function CheckAnswer: boolean;
+var
+  CurrentResult: integer;
+  BlinkColor: Color;
+begin
+  CurrentResult := 0;
+  for var j := 0 to N - 1 do 
+  begin
+    if PressedInRow(j) = 0 then begin
+      result := false;
+      exit;
+    end;
+    CurrentResult += PressedInRowValue(j);
+  end;
+  
+  if CurrentResult = RightAnswer then BlinkColor := clGreen
+  else BlinkColor := clRed;
+  BlinkPressed(BlinkColor);
+end;
+
+{ нажато две кнопки в ряду - 
+  мигаем выбранной и снимаем выбор}
+procedure NotSingle(Button: ObjectABC);
+begin
+  for var i := 1 to 3 do 
+  begin
+    arrField[Button.dx, Button.dy].SetColor(clRed);
+    Button.Color := arrField[Button.dx, Button.dy].bColor;
+    sleep(100);
+    arrField[Button.dx, Button.dy].SetColor(clFloralWhite);
+    Button.Color := arrField[Button.dx, Button.dy].bColor;
+    sleep(100);
+  end;
+  
 end;
 
 procedure MyMouseDown(x, y, mb: integer);
 begin
   // Нажата левая мышь
-  if mb = 1 then
+  if isCanUseMouse and (mb = 1) then
   begin
+    isCanUseMouse := false; // отключаем обработку мыши
     var ob := ObjectUnderPoint(x, y); // переменная типа объект ObjectABC
     if ob <> nil then begin
-      {!!!!!!!!!!!!!!!!!!}
-      ob.Color := clMoneyGreen;
+      arrField[ob.dx, ob.dy].SetIsPressed(true);
+      arrField[ob.dx, ob.dy].SetColor(clMoneyGreen);
+      ob.Color := arrField[ob.dx, ob.dy].bColor;
+      
+      // выбрано не больше одной кнопки в ряду
+      if PressedInRow(ob.dy) < 2 then begin
+        if CheckAnswer then begin
+          {!!!!!!!!!!!!!!}
+        end;
+      end else
+        NotSingle(ob);
+      
+      {!!!!!!!!!!!!!!!!!!!!!!!!!}
     end;    
+    isCanUseMouse := true; // включаем обработку мыши
   end;  
 end;
 
