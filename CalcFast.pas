@@ -1,4 +1,4 @@
-uses GraphABC, ABCObjects;
+uses GraphABC, ABCObjects, Timers;
 const
   WinWidth = 1152; // ширина создаваемого окна
   WinHeight = 864; // высота создаваемого окна
@@ -9,6 +9,7 @@ const
   EnableCheat = true; // включить подсказку с правильными ответами (только для отладки =)
   maxDimX = 8; // максимальный размер игрового поля
   maxDimY = 8;
+  MaxTime = 300;// Времени на игру
 
 type
   {класс кнопки со свсеми ее атрибутами и свойствами}
@@ -50,24 +51,19 @@ type
   end;
 
 var
-  M, N: integer; // размеры игрового поля в кнопках по горизонтали и вертикали
+  M: integer = 3; // размеры игрового поля в кнопках по горизонтали и вертикали
+  N: integer = 3; 
   arrField: array [0..maxDimX, 0..maxDimY] of cButton; // массив с кнопками игрового поля
   RightAnswer: integer; // текущий правильный ответ
   isCanUseMouse: boolean;// флаг, что сейчас можно обрабатывать нажатие мыши
+  Level1: integer = 1; // уровень по размеру поля
+  Level2: integer = 1;// уровень по величине заполняемых цифр
+  t: Timer;
+  LeftTime: integer = MaxTime;
 
 // отображение игрового поля - кнопки от 3*3 до n*m
 //   задается на входе размерность и диапозон значений на заполнение
 // при нажатии на кнопку менять цвет на зеленый
-
-{
-TODO:
-проверка на собранный ряд
-сверка ответов, если ряд собран
-мигать цветом кнопок при правильном/неправильном ответе
-фиксация результатов
-игра на время
-уровни
-}
 
 {процедура возвращает координаты верхнего угла кнопки по 
  ее позиции и размерности игрового поля}
@@ -83,6 +79,12 @@ var
   X, Y: integer;
   MyRoundRectABC: RoundRectABC;
 begin
+  if LeftTime < 1 then exit;
+  
+  Window.Clear;
+  while Objects.Count > 0 do
+    Objects[0].Destroy;
+  
   // рисуем поле с кнопками
   for var i := 0 to DimX - 1 do
     for var j := 0 to DimY - 1 do
@@ -100,8 +102,23 @@ begin
   SetFontSize(30);
   DrawTextCentered(10, 60, WinWidth - 10, 110, RightAnswer.ToString);
   
+  SetFontSize(30);
+  DrawTextCentered(10, WinHeight - 100, WinWidth - 10, WinHeight - 60, 'Текущий уровень: ' + IntToStr(Level1) + '.' + IntToStr(Level2));
+  
   // запускам обработку мыши
   isCanUseMouse := true;
+end;
+
+procedure DrawResult(Msg: string; Lev1, Lev2: integer);
+begin
+  Window.Clear;
+  while Objects.Count > 0 do
+    Objects[0].Destroy;
+  
+  SetFontSize(40);
+  DrawTextCentered(10, WinCenterY - 180, WinWidth - 10, WinCenterY - 120, Msg);
+  SetFontSize(60);
+  DrawTextCentered(10, WinCenterY - 30, WinWidth - 10, WinCenterY + 100, 'Набранный уровень: ' + IntToStr(Lev1) + '.' + IntToStr(Lev2));
 end;
 
 {процедура для подготовки игрового поля}
@@ -168,6 +185,16 @@ begin
     end;
 end;
 
+{ возвращаем номер нажатой кнопки в заданном ряду}
+function PressedInRowNumber(row: integer): integer;
+begin
+  for var i := 0 to N - 1 do
+    if arrField[i, row].isPressed then begin
+      result := i;
+      exit;
+    end;
+end;
+
 { моргаем нажатыми кнопками заданным цветом}
 procedure BlinkPressed(cColor: Color);
   procedure SetColor(cColor: Color);
@@ -208,8 +235,26 @@ begin
     CurrentResult += PressedInRowValue(j);
   end;
   
-  if CurrentResult = RightAnswer then BlinkColor := clGreen
-  else BlinkColor := clRed;
+  // проверяем, что в предыдущем ряде отклонение в выбранной кнопке не > 1,
+  // т.е. цепочка
+  for var j := 1 to N - 1 do 
+  begin
+    if abs(PressedInRowNumber(j - 1) - PressedInRowNumber(j)) > 1 then begin
+      BlinkColor := clRed;
+      BlinkPressed(BlinkColor);
+      result := false;
+      exit;
+    end;
+  end;
+  
+  if CurrentResult = RightAnswer then begin
+    result := true;
+    BlinkColor := clGreen
+  end
+  else begin
+    result := false;
+    BlinkColor := clRed;
+  end;
   BlinkPressed(BlinkColor);
 end;
 
@@ -226,33 +271,94 @@ begin
     Button.Color := arrField[Button.dx, Button.dy].bColor;
     sleep(100);
   end;
+  arrField[Button.dx, Button.dy].SetIsPressed(false);  
+end;
+
+{ проверка, что есть выбор в каждом из рядов}
+function CheckedInAllRows: boolean;
+begin
+  for var j := 0 to N - 1 do 
+  begin
+    if PressedInRow(j) = 0 then begin
+      result := false;
+      exit;
+    end;
+  end;
   
+  result := true;
+end;
+
+// Сбрасываем для всех кнопок, что их нажали и красим в начальный цвет
+procedure ClearChoose;
+begin
+  for var i := 0 to Objects.Count - 1 do
+    if Objects[i] is RoundRectABC then begin
+      arrField[Objects[i].dx, Objects[i].dy].SetIsPressed(false);
+      if EnableCheat and arrField[Objects[i].dx, Objects[i].dy].isRightAns then arrField[Objects[i].dx, Objects[i].dy].SetColor(clAzure);
+      Objects[i].Color := arrField[Objects[i].dx, Objects[i].dy].bColor;
+    end;
 end;
 
 procedure MyMouseDown(x, y, mb: integer);
 begin
   // Нажата левая мышь
-  if isCanUseMouse and (mb = 1) then
+  if isCanUseMouse and (mb = 1) and (LeftTime > 0) then
   begin
     isCanUseMouse := false; // отключаем обработку мыши
     var ob := ObjectUnderPoint(x, y); // переменная типа объект ObjectABC
     if ob <> nil then begin
-      arrField[ob.dx, ob.dy].SetIsPressed(true);
-      arrField[ob.dx, ob.dy].SetColor(clMoneyGreen);
+      if arrField[ob.dx, ob.dy].isPress then begin
+        arrField[ob.dx, ob.dy].SetIsPressed(false);
+        arrField[ob.dx, ob.dy].SetColor(clFloralWhite);
+        if EnableCheat and arrField[ob.dx, ob.dy].isRightAns then arrField[ob.dx, ob.dy].SetColor(clAzure);
+      end else begin
+        arrField[ob.dx, ob.dy].SetIsPressed(true);
+        arrField[ob.dx, ob.dy].SetColor(clMoneyGreen);
+      end;
       ob.Color := arrField[ob.dx, ob.dy].bColor;
       
       // выбрано не больше одной кнопки в ряду
       if PressedInRow(ob.dy) < 2 then begin
         if CheckAnswer then begin
-          {!!!!!!!!!!!!!!}
-        end;
+          {увеличиваем счетчик правильных ответов, усложняем}
+          Level2 += 1;
+          if Level2 = 10 then begin
+            Level2 := 1;
+            Level1 += 1;
+            M += 1;
+            N += 1;
+            if M > maxDimX then begin
+              {пройден максимальный уровень}
+              DrawResult('Вы прошли максимальный уровень!', Level1 - 1, 9);
+            end;
+          end;
+          PrepareField(M, N, Level2);
+          DrawField(M, N);
+          
+        end else if CheckedInAllRows then begin
+          {сбрасываем, что нажато}
+          ClearChoose;
+        end
       end else
         NotSingle(ob);
-      
-      {!!!!!!!!!!!!!!!!!!!!!!!!!}
     end;    
     isCanUseMouse := true; // включаем обработку мыши
   end;  
+end;
+
+procedure Timer1;
+begin
+  SetBrushColor(clWhite);
+  FillRectangle(WinWidth - 300, 50, WinWidth - 10, 90);
+  LeftTime -= 1;
+  SetFontSize(14);
+  DrawTextCentered(WinWidth - 300, 50, WinWidth - 10, 90, 'Осталось времени: ' + IntToStr(LeftTime));  
+  
+  if LeftTime = 0 then begin
+    t.Stop;
+    isCanUseMouse := false;
+    DrawResult('Время закончилось!', Level1, Level2);
+  end;
 end;
 
 begin
@@ -260,8 +366,10 @@ begin
   SetWindowSize(WinWidth, WinHeight);
   OnMouseDown := MyMouseDown;
   
-  M := 5;N := 5;
-  PrepareField(M, N, 1);
+  t := new Timer(1000, Timer1);
+  t.Start;
+  
+  PrepareField(M, N, Level2);
   DrawField(M, N);
   
 end.
