@@ -1,4 +1,4 @@
-uses GraphABC, ABCObjects, Timers;
+uses GraphABC, ABCObjects, Timers, ABCButtons;
 const
   WinWidth = 1152; // ширина создаваемого окна
   WinHeight = 864; // высота создаваемого окна
@@ -9,7 +9,7 @@ const
   EnableCheat = true; // включить подсказку с правильными ответами (только для отладки =)
   maxDimX = 8; // максимальный размер игрового поля
   maxDimY = 8;
-  MaxTime = 300;// Времени на игру
+  MaxTime = 300; // Времени на игру
 
 type
   {класс кнопки со свсеми ее атрибутами и свойствами}
@@ -44,7 +44,7 @@ type
       Self.isPressed := isPressed;
     end;
     
-    property Value: integer read val;// Свойство Value устанавливается только в контрукторе
+    property Value: integer read val;// Свойство Value устанавливается только в конструкторе
     property bColor: Color read col write SetColor;
     property IsPressed: boolean read isPress write SetIsPressed;
     property IsRightAnswer: boolean read isRightAns write SetIsRightAnswer;
@@ -60,6 +60,7 @@ var
   Level2: integer = 1;// уровень по величине заполняемых цифр
   t: Timer;
   LeftTime: integer = MaxTime;
+  StartButton: ButtonABC;// кнопка запуска игры
 
 // отображение игрового поля - кнопки от 3*3 до n*m
 //   задается на входе размерность и диапозон значений на заполнение
@@ -79,19 +80,19 @@ var
   X, Y: integer;
   MyRoundRectABC: RoundRectABC;
 begin
-  if LeftTime < 1 then exit;
+  if LeftTime < 1 then exit; // если время вышло - поле не рисуем
   
   Window.Clear;
   while Objects.Count > 0 do
-    Objects[0].Destroy;
+    Objects[0].Destroy; // уничтожаем кнопки предыдущего поля
   
   // рисуем поле с кнопками
   for var i := 0 to DimX - 1 do
-    for var j := 0 to DimY - 1 do
+    for var j := 0 to DimY - 1 do // циккл по строкам и столбцам игрового поля
     begin
-      GetButtonCoord(i, j, DimX, DimY, X, Y);
-      MyRoundRectABC := new RoundRectABC(X, Y, ButtonSize, ButtonSize, 5, arrField[i, j].bColor);
-      MyRoundRectABC.Text := arrField[i, j].Value.ToString;
+      GetButtonCoord(i, j, DimX, DimY, X, Y); // получаем координаты создаваемой кнопки
+      MyRoundRectABC := new RoundRectABC(X, Y, ButtonSize, ButtonSize, 5, arrField[i, j].bColor); // создаем кнопку
+      MyRoundRectABC.Text := arrField[i, j].Value.ToString; // рисуем число на ней
       MyRoundRectABC.dx := i; // сохраняем позицию создаваемой кнопки в массиве классов кнопок
       MyRoundRectABC.dy := j;
     end;
@@ -102,6 +103,7 @@ begin
   SetFontSize(30);
   DrawTextCentered(10, 60, WinWidth - 10, 110, RightAnswer.ToString);
   
+  // выводим текущий уровень
   SetFontSize(30);
   DrawTextCentered(10, WinHeight - 100, WinWidth - 10, WinHeight - 60, 'Текущий уровень: ' + IntToStr(Level1) + '.' + IntToStr(Level2));
   
@@ -109,16 +111,17 @@ begin
   isCanUseMouse := true;
 end;
 
+// процедура для отображения результата в конце игры
 procedure DrawResult(Msg: string; Lev1, Lev2: integer);
 begin
   Window.Clear;
   while Objects.Count > 0 do
-    Objects[0].Destroy;
+    Objects[0].Destroy; // удаляем все объекты игрового поля
   
   SetFontSize(40);
-  DrawTextCentered(10, WinCenterY - 180, WinWidth - 10, WinCenterY - 120, Msg);
+  DrawTextCentered(10, WinCenterY - 180, WinWidth - 10, WinCenterY - 120, Msg); // выводим сообщение об окончании
   SetFontSize(60);
-  DrawTextCentered(10, WinCenterY - 30, WinWidth - 10, WinCenterY + 100, 'Набранный уровень: ' + IntToStr(Lev1) + '.' + IntToStr(Lev2));
+  DrawTextCentered(10, WinCenterY - 30, WinWidth - 10, WinCenterY + 100, 'Набранный уровень: ' + IntToStr(Lev1) + '.' + IntToStr(Lev2)); // выводим набранный уровень
 end;
 
 {процедура для подготовки игрового поля}
@@ -134,12 +137,13 @@ begin
     begin
       arrField[i, j] := nil;
     end;
-  RightAnswer := 0;
+  
+  RightAnswer := 0; // сбрасываем требуемый ответ
   
   for var i := 0 to DimX - 1 do
     for var j := 0 to DimY - 1 do
     begin
-      bValue := random(DiffLevel * 10 - 1) + 1;
+      bValue := random(DiffLevel * 10 - 1) + 1; // определяем случаное число на кнопке
       // инициируем кнопку
       arrField[i, j] := new cButton(bValue, clFloralWhite, false);
     end;
@@ -226,13 +230,15 @@ var
   BlinkColor: Color;
 begin
   CurrentResult := 0;
+  
+  // в каждом ряду выбрана кнопка
   for var j := 0 to N - 1 do 
   begin
     if PressedInRow(j) = 0 then begin
       result := false;
       exit;
     end;
-    CurrentResult += PressedInRowValue(j);
+    CurrentResult += PressedInRowValue(j); // считаем ответ в цепочке
   end;
   
   // проверяем, что в предыдущем ряде отклонение в выбранной кнопке не > 1,
@@ -247,7 +253,7 @@ begin
     end;
   end;
   
-  if CurrentResult = RightAnswer then begin
+  if CurrentResult = RightAnswer then begin// сумма в цепочке совпадает с требуемой
     result := true;
     BlinkColor := clGreen
   end
@@ -299,30 +305,32 @@ begin
     end;
 end;
 
+// обработка нажатия кнопуи мыши
 procedure MyMouseDown(x, y, mb: integer);
 begin
   // Нажата левая мышь
   if isCanUseMouse and (mb = 1) and (LeftTime > 0) then
   begin
     isCanUseMouse := false; // отключаем обработку мыши
-    var ob := ObjectUnderPoint(x, y); // переменная типа объект ObjectABC
+    var ob := ObjectUnderPoint(x, y); // кликнуто на переменной типа объект ObjectABC
     if ob <> nil then begin
-      if arrField[ob.dx, ob.dy].isPress then begin
+      if arrField[ob.dx, ob.dy].isPress then begin// если снимаем предадущий выбор
         arrField[ob.dx, ob.dy].SetIsPressed(false);
         arrField[ob.dx, ob.dy].SetColor(clFloralWhite);
         if EnableCheat and arrField[ob.dx, ob.dy].isRightAns then arrField[ob.dx, ob.dy].SetColor(clAzure);
-      end else begin
+      end else begin// выбираем
         arrField[ob.dx, ob.dy].SetIsPressed(true);
         arrField[ob.dx, ob.dy].SetColor(clMoneyGreen);
       end;
       ob.Color := arrField[ob.dx, ob.dy].bColor;
       
+      // проверки на составление цепочки и правильный ответ
       // выбрано не больше одной кнопки в ряду
       if PressedInRow(ob.dy) < 2 then begin
-        if CheckAnswer then begin
+        if CheckAnswer then begin// составлена цепочка 
           {увеличиваем счетчик правильных ответов, усложняем}
           Level2 += 1;
-          if Level2 = 10 then begin
+          if Level2 = 10 then begin// если это максимальный уровень на текущем размере поля - увеличиваем поле
             Level2 := 1;
             Level1 += 1;
             M += 1;
@@ -332,28 +340,31 @@ begin
               DrawResult('Вы прошли максимальный уровень!', Level1 - 1, 9);
             end;
           end;
-          PrepareField(M, N, Level2);
-          DrawField(M, N);
+          PrepareField(M, N, Level2); // подготавливаем массив под новые уровни
+          DrawField(M, N); // рисуем поле
           
-        end else if CheckedInAllRows then begin
+        end else if CheckedInAllRows then begin// выбрано в каждом ряду, но это не цепочка или результат не тот
           {сбрасываем, что нажато}
           ClearChoose;
         end
       end else
-        NotSingle(ob);
+        NotSingle(ob); // выбрано две кнопки в ряду
     end;    
     isCanUseMouse := true; // включаем обработку мыши
   end;  
 end;
 
+// сработал таймер
 procedure Timer1;
 begin
+  // выводим оставшееся время
   SetBrushColor(clWhite);
   FillRectangle(WinWidth - 300, 50, WinWidth - 10, 90);
   LeftTime -= 1;
   SetFontSize(14);
   DrawTextCentered(WinWidth - 300, 50, WinWidth - 10, 90, 'Осталось времени: ' + IntToStr(LeftTime));  
   
+  // время вышло - выводим результат  
   if LeftTime = 0 then begin
     t.Stop;
     isCanUseMouse := false;
@@ -361,9 +372,10 @@ begin
   end;
 end;
 
+// запуск игры
+procedure StartGame;
 begin
-  Window.Title := 'Считай быстро!';
-  SetWindowSize(WinWidth, WinHeight);
+  StartButton.Visible := false;
   OnMouseDown := MyMouseDown;
   
   t := new Timer(1000, Timer1);
@@ -371,5 +383,21 @@ begin
   
   PrepareField(M, N, Level2);
   DrawField(M, N);
+end;
+
+begin
+  // создаем окно
+  Window.Title := 'Считай быстро!';
+  SetWindowSize(WinWidth, WinHeight);
+  
+  // выводим начальное сообщение с правилами  
+  SetFontSize(32);
+  DrawTextCentered(100, 10, WinWidth - 10, 140, 'Математическая игра "Считай быстро!"');
+  SetFontSize(20);
+  DrawTextCentered(10, 140, WinWidth - 10, 300, 'Цель игры - построить на игровом связанную цепочку из чисел сверху вниз так, ' + #13 + #10 +
+                                                'чтобы они в сумме дали заданный результат. ' + #13 + #10 +
+                                                'Игра ведется на время.');
+  StartButton := ButtonABC.Create(WinCenterX - 100, WinCenterY + 200, 200, 50, 'Начать игру', clFloralWhite);
+  StartButton.OnClick := StartGame; 
   
 end.
